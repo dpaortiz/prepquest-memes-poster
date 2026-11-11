@@ -32,6 +32,8 @@ def kc_get(key):
     env = {'token': 'IG_TOKEN', 'user_id': 'IG_USER_ID', 'kind': 'IG_TOKEN_KIND'}.get(key)
     if env and os.environ.get(env):                       # GitHub Actions: secrets come in as env vars
         return os.environ[env]
+    if os.environ.get('IG_TOKEN'):                        # in the cloud there is no Keychain
+        return None
     r = subprocess.run(['security', 'find-generic-password', '-s', SERVICE, '-a', key, '-w'], capture_output=True, text=True)
     return r.stdout.strip() or None
 
