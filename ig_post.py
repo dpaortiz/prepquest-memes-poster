@@ -3,7 +3,7 @@
 
     python3 ig_post.py setup <ACCESS_TOKEN>   store the token (macOS Keychain) and check it's @prepquest.memes
     python3 ig_post.py check                  show the connected account and what's due
-    python3 ig_post.py run                    publish posts that are due (earliest first, about one an hour; GitHub Actions runs this)
+    python3 ig_post.py run                    publish posts that are due (earliest first, one at a time, 10am-10pm; GitHub Actions runs this)
     python3 ig_post.py post <post.json>       publish one post now
 
 Posts are the Resonance Creator post files in ~/Desktop/Claude/marketing/posts (the memes account only). A post is due
@@ -90,13 +90,17 @@ def due_posts():
 
 
 def posts_allowed():
-    """How many may go up now: one per hour since the last post (10 min slack, at most 3), so a backlog never bursts."""
+    """1 or 0: only in waking hours (10am-10:30pm New York) and at least ~2 hours after the last post, so a late run never
+    bursts a backlog or posts at night. The schedule is 6 a day, 10am to 10pm (owner, 2026-11-13, after Instagram
+    restricted the account for looking automated)."""
+    now = dt.datetime.now()
+    if not (10 <= now.hour < 22 or (now.hour == 22 and now.minute < 30)):
+        return 0
     last = [json.load(open(f)).get('ig', {}).get('posted_at') for f in glob.glob(os.path.join(POSTS, '*.json'))]
     last = max((x for x in last if x), default=None)
     if not last:
         return 1
-    mins = (dt.datetime.now() - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() / 60
-    return min(3, int((mins + 10) // 60))
+    return 1 if (now - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() >= 110 * 60 else 0
 
 
 def publish(path, t, uid):
@@ -160,7 +164,7 @@ def main():
         print('account: @' + me(t).get('username', '?'))
         print('due now:', [os.path.basename(f) for f in due_posts()])
     elif a[0] == 'run':
-        # GitHub's timer is late by hours, and the Mac starts runs when one is due: either way, about one an hour.
+        # GitHub's timer is late by hours, and the Mac starts runs when one is due: either way, one at a time.
         for f in due_posts()[:posts_allowed()]:
             try:
                 publish(f, t, uid)
