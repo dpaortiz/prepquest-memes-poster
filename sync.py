@@ -57,8 +57,12 @@ def wanted(c, pid, state):
 
 
 def main():
-    if git('pull', '--rebase', '--quiet', check=False).returncode != 0:
-        print('offline or pull failed; try later'); return
+    # This copy is only a mirror: everything here is rebuilt from Creator each run, so start from the cloud's exact state
+    # (a crash or a clash last time can never leave it stuck).
+    if git('fetch', '--quiet', 'origin', check=False).returncode != 0:
+        print('offline; try later'); return
+    git('rebase', '--abort', check=False)
+    git('reset', '--hard', '--quiet', 'origin/main')
     state = load(STATE) if os.path.exists(STATE) else {}
     cloud = {os.path.basename(f)[:-5]: f for f in glob.glob(os.path.join(REPO, 'posts', '*.json'))}
 
@@ -95,6 +99,7 @@ def main():
         if not os.path.exists(os.path.join(REPO, vname)):
             shutil.copy2(c['video'], os.path.join(REPO, vname))
         r = {k: c[k] for k in ('id', 'title', 'platforms', 'captions', 'status') if k in c}
+        r['platforms'] = c.get('platforms', ['instagram'])
         r['post_at'] = when
         r['video'] = vname
         if not os.path.exists(rf) or load(rf) != r:

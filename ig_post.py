@@ -78,19 +78,25 @@ def due_posts():
     for f in sorted(glob.glob(os.path.join(POSTS, '*.json'))):
         d = json.load(open(f))
         st = (d.get('status') or {}).get('instagram')
-        if 'instagram' not in d.get('platforms', []) or st in ('posted', 'scheduled') or not d.get('post_at') or not d.get('video'):
+        if 'instagram' not in d.get('platforms', ['instagram']) or st in ('posted', 'scheduled') or not d.get('post_at') or not d.get('video'):
             continue
-        if dt.datetime.strptime(d['post_at'], '%Y-%m-%d %H:%M') <= now:   # post_at is New York time (TZ set in the workflow)
+        try:
+            when = dt.datetime.strptime(d['post_at'], '%Y-%m-%d %H:%M')     # New York time (TZ set in the workflow)
+        except ValueError:
+            log('SKIPPED bad post_at', os.path.basename(f), d['post_at']); continue
+        if when <= now:
             out.append((d['post_at'], f))
     return [f for _, f in sorted(out)]                                  # earliest time first, not file name
 
 
-def hours_since_last_post():
+def posts_allowed():
+    """How many may go up now: one per hour since the last post (10 min slack, at most 3), so a backlog never bursts."""
     last = [json.load(open(f)).get('ig', {}).get('posted_at') for f in glob.glob(os.path.join(POSTS, '*.json'))]
     last = max((x for x in last if x), default=None)
     if not last:
         return 1
-    return int((dt.datetime.now() - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() // 3600)
+    mins = (dt.datetime.now() - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() / 60
+    return min(3, int((mins + 10) // 60))
 
 
 def publish(path, t, uid):
@@ -118,16 +124,24 @@ def publish(path, t, uid):
         raise RuntimeError('processing timed out')
     # 4. publish
     p = call('POST', f'{API}/{uid}/media_publish', {'creation_id': cid, 'access_token': t})
-    link = call('GET', f"{API}/{p['id']}", {'fields': 'permalink', 'access_token': t}).get('permalink', '')
-    d = json.load(open(path))                                     # re-read: Creator may have edited it meanwhile
-    d.setdefault('status', {})
-    if not isinstance(d['status'], dict):
+    # It's live: mark it posted before anything else can fail, or the next run would post it again.
+    mark(path, {'media_id': p['id'], 'permalink': '', 'posted_at': dt.datetime.now().strftime('%Y-%m-%d %H:%M')})
+    try:
+        link = call('GET', f"{API}/{p['id']}", {'fields': 'permalink', 'access_token': t}).get('permalink', '')
+        mark(path, {**json.load(open(path))['ig'], 'permalink': link})
+    except Exception as e:
+        link = f'(no link yet: {e})'
+    log('posted', os.path.basename(path), link)
+
+
+def mark(path, ig):
+    d = json.load(open(path))                                     # re-read: the sync may have edited it meanwhile
+    if not isinstance(d.get('status'), dict):
         d['status'] = {}
     d['status']['instagram'] = 'posted'
-    d['ig'] = {'media_id': p['id'], 'permalink': link, 'posted_at': dt.datetime.now().strftime('%Y-%m-%d %H:%M')}
+    d['ig'] = ig
     tmp = path + '.tmp'
     json.dump(d, open(tmp, 'w'), indent=1, ensure_ascii=False); os.replace(tmp, path)
-    log('posted', os.path.basename(path), link)
 
 
 def main():
@@ -146,9 +160,8 @@ def main():
         print('account: @' + me(t).get('username', '?'))
         print('due now:', [os.path.basename(f) for f in due_posts()])
     elif a[0] == 'run':
-        # GitHub starts the scheduled run every few hours, not every 15 min: catch up one post per hour since the last
-        # one (at most 3 a run), so a backlog drains at about an hour each instead of in one burst.
-        for f in due_posts()[:min(3, max(1, hours_since_last_post()))]:
+        # GitHub's timer is late by hours, and the Mac starts runs when one is due: either way, about one an hour.
+        for f in due_posts()[:posts_allowed()]:
             try:
                 publish(f, t, uid)
             except Exception as e:

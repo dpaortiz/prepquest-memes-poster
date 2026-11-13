@@ -9,7 +9,7 @@ permissions:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - name: publish the next due Reel
@@ -22,7 +22,11 @@ jobs:
           LOG_FILE: post.log
         run: python3 ig_post.py run
       - name: save the posted status
+        if: always()
         run: |
           git config user.name "memes poster"; git config user.email "actions@users.noreply.github.com"
           git add posts post.log 2>/dev/null || true
-          git diff --cached --quiet || (git commit -m "posted" && git push)
+          git diff --cached --quiet && exit 0
+          git commit -m "posted"
+          for i in 1 2 3 4 5; do git pull --rebase -X theirs && git push && exit 0; sleep 5; done
+          exit 1
