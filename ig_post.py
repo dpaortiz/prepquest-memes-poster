@@ -3,7 +3,7 @@
 
     python3 ig_post.py setup <ACCESS_TOKEN>   store the token (macOS Keychain) and check it's @prepquest.memes
     python3 ig_post.py check                  show the connected account and what's due
-    python3 ig_post.py run                    publish posts that are due (about one an hour; GitHub Actions runs this)
+    python3 ig_post.py run                    publish posts that are due (earliest first, about one an hour; GitHub Actions runs this)
     python3 ig_post.py post <post.json>       publish one post now
 
 Posts are the Resonance Creator post files in ~/Desktop/Claude/marketing/posts (the memes account only). A post is due
@@ -81,8 +81,8 @@ def due_posts():
         if 'instagram' not in d.get('platforms', []) or st in ('posted', 'scheduled') or not d.get('post_at') or not d.get('video'):
             continue
         if dt.datetime.strptime(d['post_at'], '%Y-%m-%d %H:%M') <= now:   # post_at is New York time (TZ set in the workflow)
-            out.append(f)
-    return out
+            out.append((d['post_at'], f))
+    return [f for _, f in sorted(out)]                                  # earliest time first, not file name
 
 
 def hours_since_last_post():
