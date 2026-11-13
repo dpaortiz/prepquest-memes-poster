@@ -3,7 +3,7 @@
 
     python3 ig_post.py setup <ACCESS_TOKEN>   store the token (macOS Keychain) and check it's @prepquest.memes
     python3 ig_post.py check                  show the connected account and what's due
-    python3 ig_post.py run                    publish posts that are due (one per run; launchd runs this every 15 min)
+    python3 ig_post.py run                    publish posts that are due (about one an hour; GitHub Actions runs this)
     python3 ig_post.py post <post.json>       publish one post now
 
 Posts are the Resonance Creator post files in ~/Desktop/Claude/marketing/posts (the memes account only). A post is due
@@ -85,6 +85,14 @@ def due_posts():
     return out
 
 
+def hours_since_last_post():
+    last = [json.load(open(f)).get('ig', {}).get('posted_at') for f in glob.glob(os.path.join(POSTS, '*.json'))]
+    last = max((x for x in last if x), default=None)
+    if not last:
+        return 1
+    return int((dt.datetime.now() - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() // 3600)
+
+
 def publish(path, t, uid):
     d = json.load(open(path))
     video = d['video'] if os.path.isabs(d['video']) else os.path.join(POSTS, '..', d['video'])
@@ -138,12 +146,14 @@ def main():
         print('account: @' + me(t).get('username', '?'))
         print('due now:', [os.path.basename(f) for f in due_posts()])
     elif a[0] == 'run':
-        due = due_posts()
-        if due:                                                     # one per run: keeps the hourly spacing
+        # GitHub starts the scheduled run every few hours, not every 15 min: catch up one post per hour since the last
+        # one (at most 3 a run), so a backlog drains at about an hour each instead of in one burst.
+        for f in due_posts()[:min(3, max(1, hours_since_last_post()))]:
             try:
-                publish(due[0], t, uid)
+                publish(f, t, uid)
             except Exception as e:
-                log('FAILED', os.path.basename(due[0]), e)
+                log('FAILED', os.path.basename(f), e)
+                break                                               # blocked or failing: the rest would fail the same way
     elif a[0] == 'post':
         publish(os.path.abspath(a[1]), t, uid)
 
