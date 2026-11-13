@@ -90,9 +90,9 @@ def due_posts():
 
 
 def posts_allowed():
-    """1 or 0: only in waking hours (10am-10:30pm New York) and at least ~2 hours after the last post, so a late run never
-    bursts a backlog or posts at night. The schedule is 6 a day, 10am to 10pm (owner, 2026-11-13, after Instagram
-    restricted the account for looking automated)."""
+    """1 or 0: only in waking hours (10am-10:30pm New York) and at least 80 min after the last post, so a late run never
+    bursts a backlog or posts at night. The schedule is 6 a day at 11:30, 3, 4:30, 6:30, 8 and 9:30 (owner, 2026-11-13,
+    after Instagram restricted the account for looking automated; the closest pair is 90 min apart)."""
     now = dt.datetime.now()
     if not (10 <= now.hour < 22 or (now.hour == 22 and now.minute < 30)):
         return 0
@@ -100,7 +100,7 @@ def posts_allowed():
     last = max((x for x in last if x), default=None)
     if not last:
         return 1
-    return 1 if (now - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() >= 110 * 60 else 0
+    return 1 if (now - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() >= 80 * 60 else 0
 
 
 def publish(path, t, uid):
