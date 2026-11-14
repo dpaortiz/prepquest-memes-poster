@@ -1,32 +1,42 @@
 name: post due memes
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/15 * * * *'      # backup only: GitHub fires this every few hours; it restarts the loop if it ever stops
   workflow_dispatch:
 concurrency: poster
 permissions:
   contents: write
+  actions: write
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 350
+    env:
+      TZ: America/New_York
+      IG_TOKEN: ${{ secrets.IG_TOKEN }}
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      IG_TOKEN_KIND: system_user
+      POSTS_DIR: posts
+      LOG_FILE: post.log
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: publish the next due Reel
-        env:
-          TZ: America/New_York
-          IG_TOKEN: ${{ secrets.IG_TOKEN }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          IG_TOKEN_KIND: system_user
-          POSTS_DIR: posts
-          LOG_FILE: post.log
-        run: python3 ig_post.py run
-      - name: save the posted status
-        if: always()
+      - name: check every 4 min for 5.5 hours, then hand over to a fresh run
+        # GitHub's own timer runs hours late, so one run stays up and posts each Reel within minutes of its time
         run: |
           git config user.name "memes poster"; git config user.email "actions@users.noreply.github.com"
-          git add posts post.log 2>/dev/null || true
-          git diff --cached --quiet && exit 0
-          git commit -m "posted"
-          for i in 1 2 3 4 5; do git pull --rebase -X theirs && git push && exit 0; sleep 5; done
-          exit 1
+          save() {
+            git add posts post.log 2>/dev/null || true
+            git diff --cached --quiet && return 0
+            git commit -qm "posted"
+            for i in 1 2 3 4 5; do git pull -q --rebase -X theirs && git push -q && return 0; git rebase --abort 2>/dev/null; sleep 5; done
+            return 1
+          }
+          end=$(( $(date +%s) + 330 * 60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            git pull -q --rebase || git rebase --abort      # pick up the Mac's latest times and skips
+            python3 ig_post.py run || true
+            save || echo "save failed; retrying next round"
+            sleep 240
+          done
+          gh workflow run "post due memes" -R "$GITHUB_REPOSITORY"

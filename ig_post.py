@@ -90,9 +90,10 @@ def due_posts():
 
 
 def posts_allowed():
-    """1 or 0: only in waking hours (10am-10:30pm New York) and at least 80 min after the last post, so a late run never
+    """1 or 0: only in waking hours (10am-10:30pm New York) and at least 60 min after the last post, so a late run never
     bursts a backlog or posts at night. The schedule is 6 a day at 11:30, 3, 4:30, 6:30, 8 and 9:30 (owner, 2026-11-13,
-    after Instagram restricted the account for looking automated; the closest pair is 90 min apart)."""
+    after Instagram restricted the account for looking automated; the closest pair is 90 min apart, so one late post
+    doesn't push back the next)."""
     now = dt.datetime.now()
     if not (10 <= now.hour < 22 or (now.hour == 22 and now.minute < 30)):
         return 0
@@ -100,7 +101,7 @@ def posts_allowed():
     last = max((x for x in last if x), default=None)
     if not last:
         return 1
-    return 1 if (now - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() >= 80 * 60 else 0
+    return 1 if (now - dt.datetime.strptime(last, '%Y-%m-%d %H:%M')).total_seconds() >= 60 * 60 else 0
 
 
 def publish(path, t, uid):
@@ -164,7 +165,7 @@ def main():
         print('account: @' + me(t).get('username', '?'))
         print('due now:', [os.path.basename(f) for f in due_posts()])
     elif a[0] == 'run':
-        # GitHub's timer is late by hours, and the Mac starts runs when one is due: either way, one at a time.
+        # The workflow calls this every few minutes: at most one post per call.
         for f in due_posts()[:posts_allowed()]:
             try:
                 publish(f, t, uid)
